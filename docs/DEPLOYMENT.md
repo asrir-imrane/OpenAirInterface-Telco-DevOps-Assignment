@@ -35,6 +35,9 @@
    ```bash
    docker logs jenkins
    ```
+### Docker Containers
+Running Docker containers during deployment:
 
+![Docker Containers](../screenshots/docker_containers.png)
 ---
 
