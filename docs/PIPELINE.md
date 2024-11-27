@@ -61,7 +61,18 @@
     }
 
    ```
+## Pipeline Overview
+This section provides an overview of the pipeline setup and execution.
 
+### Pipeline Execution
+Below is the screenshot showing the pipeline stages:
+
+![Pipeline Overview](../screenshots/pipeline_overview.png)
+
+### Failed Pipeline Execution
+Screenshot of the pipeline failure:
+
+![Failed Pipeline](../screenshots/failed_pipeline.png)
 3. **Save and Build:**
    Trigger the pipeline to test.
 
