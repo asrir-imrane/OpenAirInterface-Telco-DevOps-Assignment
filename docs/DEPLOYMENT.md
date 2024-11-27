@@ -2,15 +2,17 @@
 
 ### Gitea Deployment
 1. **Create a Docker network:**
+   The purpose of creating a custom Docker network, `devops_network`, is to enable seamless communication between Jenkins and Gitea containers. This isolated network ensures better security and container discovery by name.
+
    ```bash
-   docker network create cicd-network
+   docker network create devops_network
    ```
 
 2. **Run Gitea:**
    ```bash
    docker run -d \
      --name=gitea \
-     --network=cicd-network \
+     --network=devops_network \
      -p 3000:3000 -p 2222:22 \
      gitea/gitea:latest
    ```
@@ -23,7 +25,7 @@
    ```bash
    docker run -d \
      --name=jenkins \
-     --network=cicd-network \
+     --network=devops_network \
      -p 8080:8080 -p 50000:50000 \
      -v jenkins_home:/var/jenkins_home \
      -v /var/run/docker.sock:/var/run/docker.sock \
@@ -35,6 +37,9 @@
    ```bash
    docker logs jenkins
    ```
+
+---
+
 ### Docker Containers
 Running Docker containers during deployment:
 
