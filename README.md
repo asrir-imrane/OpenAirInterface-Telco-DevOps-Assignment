@@ -8,6 +8,10 @@ This project demonstrates deploying Gitea and Jenkins using Docker, configuring 
 3. [Pipeline Setup](docs/PIPELINE.md)
 4. [Challenges and Resolutions](docs/CHALLENGES.md)
 
+## Overview
+This document provides a step-by-step process to deploy Gitea and Jenkins using Docker, configure Jenkins to access Docker, and resolve issues encountered during the process. It also outlines the pipeline setup, HTML reporting, and GitHub repository management.
+
+
 ## Repository Structure
 .
 ├── README.md
