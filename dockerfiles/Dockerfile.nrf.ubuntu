@@ -1,0 +1,146 @@
+# Dockerfile for the Open-Air-Interface NRF service
+
+#---------------------------------------------------------------------
+# BASE IMAGE
+#---------------------------------------------------------------------
+    ARG BASE_IMAGE=ubuntu:jammy
+    FROM $BASE_IMAGE AS oai-nrf-base
+    
+    ENV DEBIAN_FRONTEND=noninteractive
+    ENV TZ=Europe/Paris
+    ENV IS_DOCKERFILE=1
+    
+    RUN apt-get update && \
+        DEBIAN_FRONTEND=noninteractive apt-get upgrade --yes && \
+        DEBIAN_FRONTEND=noninteractive apt-get install --yes \
+          psmisc \
+          git \
+          cmake \
+          build-essential \
+          libssl-dev \
+          pkg-config \
+        && rm -rf /var/lib/apt/lists/*
+    
+    # Some GIT configuration commands
+    RUN git config --global https.postBuffer 123289600 && \
+        git config --global http.sslverify false
+    
+    # Copying source code
+    WORKDIR /openair-nrf
+    COPY ./build/scripts /openair-nrf/build/scripts
+    COPY ./build/common-build /openair-nrf/build/common-build
+    COPY ./build/nrf/CMakeLists.txt /openair-nrf/build/nrf/CMakeLists.txt
+    
+    # Install CPR dependency with proper CMake configuration
+    RUN git clone https://github.com/libcpr/cpr.git && \
+        cd cpr && \
+        mkdir build && cd build && \
+        cmake .. -DBUILD_SHARED_LIBS=ON -DCMAKE_INSTALL_PREFIX=/usr/local && \
+        make -j$(nproc) && \
+        make install && \
+        ldconfig
+    
+    # Ensure the build script is executable and install dependencies
+    WORKDIR /openair-nrf/build/scripts
+    RUN echo "Converting all scripts to Unix-style line endings..." && \
+        find . -type f -name "*" -exec dos2unix {} \; && \
+        echo "Checking contents of /openair-nrf/build/scripts:" && \
+        ls -l && \
+        chmod +x ./build_nrf && \
+        echo "Executing build_nrf script with bash..." && \
+        bash ./build_nrf --install-deps --force && \
+        ldconfig
+    
+    #---------------------------------------------------------------------
+    # BUILDER IMAGE
+    #---------------------------------------------------------------------
+    FROM oai-nrf-base AS oai-nrf-builder
+    
+    # Copying source code
+    COPY . /openair-nrf
+    
+    # Ensure the build script is executable and build NRF
+    WORKDIR /openair-nrf/build/scripts
+    RUN echo "Converting all scripts to Unix-style line endings..." && \
+        find . -type f -name "*" -exec dos2unix {} \; && \
+        echo "Ensuring all scripts are executable..." && \
+        chmod +x ./* && \
+        echo "Contents of /openair-nrf/build/scripts:" && \
+        ls -l && \
+        bash ./build_nrf --clean --Verbose --build-type Release --jobs && \
+        ldd /openair-nrf/build/nrf/build/nrf && \
+        mv /openair-nrf/build/nrf/build/nrf /openair-nrf/build/nrf/build/oai_nrf
+    
+    #---------------------------------------------------------------------
+    # YQ IMAGE FOR YAML PROCESSING
+    #---------------------------------------------------------------------
+    FROM mikefarah/yq:latest AS yq-source
+    
+    #---------------------------------------------------------------------
+    # TARGET IMAGE
+    #---------------------------------------------------------------------
+    FROM $BASE_IMAGE AS oai-nrf
+    
+    ENV DEBIAN_FRONTEND=noninteractive
+    ENV TZ=Europe/Paris
+    ENV CMAKE_PREFIX_PATH="/usr/local/share/cmake/Modules"
+    
+    # Install runtime dependencies and debug tools
+    RUN apt-get update && \
+        DEBIAN_FRONTEND=noninteractive apt-get upgrade --yes && \
+        DEBIAN_FRONTEND=noninteractive apt-get install --yes \
+          tzdata \
+          psmisc \
+          net-tools \
+          tcpdump \
+          iputils-ping \
+          bc \
+          libldap-2.?-? \
+          libkrb5-3 \
+          libgssapi-krb5-2 \
+          libcurl4-gnutls-dev \
+          librtmp1 \
+          libpsl5 \
+          libboost-thread1.7?.0 \
+          libboost-chrono1.7?.0 \
+        && rm -rf /var/lib/apt/lists/*
+    
+    # Copying executable and generated libraries
+    WORKDIR /openair-nrf/bin
+    COPY --from=oai-nrf-builder \
+        /openair-nrf/build/nrf/build/oai_nrf \
+        /openair-nrf/scripts/healthcheck.sh \
+        ./
+    COPY --from=yq-source /usr/bin/yq /usr/bin
+    
+    COPY --from=oai-nrf-builder \
+        /usr/local/lib/libnghttp2.so.14 \
+        /usr/local/lib/libnghttp2_asio.so.1 \
+        /usr/local/lib/libyaml-cpp.so.0.? \
+        /usr/local/lib/libpistache.so \
+        /usr/local/lib/libfmt.so \
+        /usr/local/lib/libcpr.so.1 \
+        /usr/local/lib/
+    
+    # Update library configurations
+    RUN ldconfig && \
+        ldd /openair-nrf/bin/oai_nrf
+    
+    # Copying template configuration files
+    COPY --from=oai-nrf-builder /openair-nrf/etc/config.yaml /openair-nrf/etc/
+    
+    # Set up the working directory for the container
+    WORKDIR /openair-nrf
+    
+    # Expose ports
+    EXPOSE 80/tcp 8080/tcp
+    
+    # Healthcheck command
+    HEALTHCHECK --interval=10s \
+                --timeout=15s \
+                --retries=6 \
+        CMD /openair-nrf/bin/healthcheck.sh
+    
+    # Default command to start the NRF service
+    CMD ["/openair-nrf/bin/oai_nrf", "-c", "/openair-nrf/etc/config.yaml", "-o"]
+    
